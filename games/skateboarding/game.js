@@ -37,9 +37,8 @@ let background;
 let cursors;
 let spaceKey;
 let isInHalfpipe = false;
-let halfpipeAngle = 0;
 let speed = 200;
-let combo = 0;
+let combo = 1;
 let comboTimer = 0;
 let skyGradient;
 
@@ -48,128 +47,16 @@ const SKATER_WIDTH = 32;
 const SKATER_HEIGHT = 48;
 const HALFPIPE_WIDTH = 200;
 const HALFPIPE_HEIGHT = 100;
-const HALFPIPE_CURVE_POINTS = 20;
 
-// Base64 encoded assets (1x1 pixel for procedural generation)
+// Base64 encoded assets
 const PIXEL_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
-// Simple sound effect generation (base64 encoded minimal WAV files)
-// These are tiny procedural beeps/clicks for web audio
-const LAND_SOUND_BASE64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='; // Silent placeholder
-const GRIND_SOUND_BASE64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='; // Silent placeholder
-
-// Halfpipe Y-coordinate map for smooth U-shape (x: 220-420)
-const halfpipeYMap = {};
-for (let x = 220; x <= 420; x++) {
-    const relX = (x - 220) / HALFPIPE_WIDTH;
-    const angle = relX * Math.PI;
-    halfpipeYMap[x] = 440 - Math.sin(angle) * HALFPIPE_HEIGHT;
-}
-
 function preload() {
-    // Load base pixel for procedural generation
+    // Load base pixel for drawing
     this.load.image('pixel', `data:image/png;base64,${PIXEL_BASE64}`);
-    
-    // Create and load skater sprite sheet procedurally
-    this.load.on('filecomplete-image-pixel', () => {
-        // Generate skater spritesheet
-        const skaterCanvas = this.textures.createCanvas('skater-sheet', 512, 64);
-        const ctx = skaterCanvas.context;
-        
-        // Draw 16 frames of skater animations
-        for (let frame = 0; frame < 16; frame++) {
-            const x = frame * 32;
-            drawSkaterFrame(ctx, x, 0, frame);
-        }
-        
-        skaterCanvas.refresh();
-        
-        // Create sprite sheet from canvas
-        this.textures.addSpriteSheet('skater', skaterCanvas.canvas, {
-            frameWidth: 32,
-            frameHeight: 48
-        });
-    });
 }
 
 function create() {
-    // Create animations
-    this.anims.create({
-        key: 'idle',
-        frames: this.anims.generateFrameNumbers('skater', { start: 0, end: 1 }),
-        frameRate: 4,
-        repeat: -1
-    });
-    
-    this.anims.create({
-        key: 'pushLeft',
-        frames: this.anims.generateFrameNumbers('skater', { start: 2, end: 3 }),
-        frameRate: 8,
-        repeat: -1
-    });
-    
-    this.anims.create({
-        key: 'pushRight',
-        frames: this.anims.generateFrameNumbers('skater', { start: 4, end: 5 }),
-        frameRate: 8,
-        repeat: -1
-    });
-    
-    this.anims.create({
-        key: 'jump',
-        frames: [{ key: 'skater', frame: 6 }],
-        frameRate: 1
-    });
-    
-    this.anims.create({
-        key: 'grab',
-        frames: [{ key: 'skater', frame: 7 }],
-        frameRate: 1
-    });
-    
-    this.anims.create({
-        key: 'kickflip',
-        frames: this.anims.generateFrameNumbers('skater', { start: 8, end: 9 }),
-        frameRate: 16,
-        repeat: 0
-    });
-    
-    this.anims.create({
-        key: 'handplant',
-        frames: [{ key: 'skater', frame: 10 }],
-        frameRate: 1
-    });
-    
-    this.anims.create({
-        key: 'bail',
-        frames: [{ key: 'skater', frame: 11 }],
-        frameRate: 1
-    });
-    
-    this.anims.create({
-        key: 'grind',
-        frames: [{ key: 'skater', frame: 12 }],
-        frameRate: 1
-    });
-    
-    this.anims.create({
-        key: 'spin360',
-        frames: [{ key: 'skater', frame: 13 }],
-        frameRate: 1
-    });
-    
-    this.anims.create({
-        key: 'crouch',
-        frames: [{ key: 'skater', frame: 14 }],
-        frameRate: 1
-    });
-    
-    this.anims.create({
-        key: 'victory',
-        frames: [{ key: 'skater', frame: 15 }],
-        frameRate: 1
-    });
-    
     // Create sky gradient
     skyGradient = this.add.graphics();
     updateSkyGradient.call(this);
@@ -178,19 +65,26 @@ function create() {
     createBackground.call(this);
     
     // Create ground
-    ground = this.add.rectangle(320, 460, 640, 40, 0x4a4a4a);
-    this.physics.add.existing(ground, true);
+    ground = this.physics.add.staticGroup();
+    ground.create(320, 460, 'pixel').setScale(640, 40).refreshBody().setTint(0x4a4a4a);
     
     // Create halfpipe
     createHalfpipe.call(this);
     
-    // Create skater sprite
-    skater = createSkater.call(this, 100, 400);
+    // Create skater as a simple rectangle sprite for now
+    skater = this.physics.add.sprite(100, 400, 'pixel');
+    skater.setScale(SKATER_WIDTH, SKATER_HEIGHT);
+    skater.setTint(0xff0000); // Red for visibility
+    skater.setBounce(0.2);
+    skater.setCollideWorldBounds(true);
     
-    // Add collisions
+    // Physics
     this.physics.add.collider(skater, ground);
     
-    // Create UI
+    // Create obstacles
+    generateObstacles.call(this);
+    
+    // UI
     scoreText = this.add.text(16, 16, 'Score: 0', { 
         fontSize: '24px', 
         fill: '#ffffff',
@@ -220,313 +114,71 @@ function create() {
         fill: '#ffffff'
     }).setOrigin(0.5);
     
+    // Controls info
+    this.add.text(320, 460, 'Arrow Keys: Move | Space: Jump/Tricks', {
+        fontSize: '16px',
+        fill: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 3
+    }).setOrigin(0.5);
+    
     // Start day/night cycle
     this.time.addEvent({
-        delay: 1000,
+        delay: 2000,
         callback: updateTimeOfDay,
         callbackScope: this,
         loop: true
     });
-    
-    // Generate initial obstacles
-    generateObstacles.call(this);
-}
-
-// Helper function to draw skater frames
-function drawSkaterFrame(ctx, x, y, frame) {
-    ctx.save();
-    ctx.translate(x + 16, y + 24);
-    
-    // Different poses based on frame
-    switch(frame) {
-        case 0: // Idle
-        case 1:
-            drawSkaterStanding(ctx, frame === 1);
-            break;
-        case 2: // Push left
-        case 3:
-            drawSkaterPushing(ctx, true, frame === 3);
-            break;
-        case 4: // Push right
-        case 5:
-            drawSkaterPushing(ctx, false, frame === 5);
-            break;
-        case 6: // Jump
-            drawSkaterJumping(ctx);
-            break;
-        case 7: // Grab
-            drawSkaterGrab(ctx);
-            break;
-        case 8: // Kickflip frame 1
-        case 9: // Kickflip frame 2
-            drawSkaterKickflip(ctx, frame - 8);
-            break;
-        case 10: // Handplant
-            drawSkaterHandplant(ctx);
-            break;
-        case 11: // Bail
-            drawSkaterBail(ctx);
-            break;
-        case 12: // Grind
-            drawSkaterGrind(ctx);
-            break;
-        case 13: // 360 spin
-            drawSkater360(ctx);
-            break;
-        case 14: // Crouch
-            drawSkaterCrouch(ctx);
-            break;
-        case 15: // Victory
-            drawSkaterVictory(ctx);
-            break;
-    }
-    
-    ctx.restore();
-}
-
-function drawSkaterStanding(ctx, alt) {
-    // Skateboard
-    ctx.fillStyle = '#8B4513';
-    ctx.fillRect(-20, 20, 40, 4);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(-15, 24, 6, 6);
-    ctx.fillRect(9, 24, 6, 6);
-    
-    // Legs
-    ctx.fillStyle = '#34495e';
-    ctx.fillRect(-6, 0, 5, 20);
-    ctx.fillRect(1, 0, 5, 20);
-    
-    // Body
-    ctx.fillStyle = '#3498db';
-    ctx.fillRect(-8, -20, 16, 20);
-    
-    // Arms
-    const armOffset = alt ? 2 : 0;
-    ctx.fillRect(-12, -15 + armOffset, 4, 12);
-    ctx.fillRect(8, -15 - armOffset, 4, 12);
-    
-    // Head
-    ctx.fillStyle = '#fdbcb4';
-    ctx.fillRect(-6, -30, 12, 10);
-    
-    // Helmet
-    ctx.fillStyle = '#2c3e50';
-    ctx.fillRect(-8, -32, 16, 8);
-}
-
-function drawSkaterPushing(ctx, left, extended) {
-    drawSkaterStanding(ctx, false);
-    
-    // Pushing leg
-    ctx.fillStyle = '#34495e';
-    if (left) {
-        ctx.fillRect(extended ? -10 : -8, extended ? 15 : 10, 5, extended ? 10 : 15);
-    } else {
-        ctx.fillRect(extended ? 5 : 3, extended ? 15 : 10, 5, extended ? 10 : 15);
-    }
-}
-
-function drawSkaterJumping(ctx) {
-    // Skateboard (rotated)
-    ctx.save();
-    ctx.rotate(0.3);
-    ctx.fillStyle = '#8B4513';
-    ctx.fillRect(-20, 25, 40, 4);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(-15, 29, 6, 6);
-    ctx.fillRect(9, 29, 6, 6);
-    ctx.restore();
-    
-    // Bent legs
-    ctx.fillStyle = '#34495e';
-    ctx.fillRect(-6, -5, 5, 15);
-    ctx.fillRect(1, -5, 5, 15);
-    ctx.fillRect(-8, 8, 7, 5);
-    ctx.fillRect(1, 8, 7, 5);
-    
-    // Body (leaning)
-    ctx.save();
-    ctx.rotate(-0.1);
-    ctx.fillStyle = '#3498db';
-    ctx.fillRect(-8, -20, 16, 20);
-    
-    // Arms out
-    ctx.fillRect(-16, -18, 6, 4);
-    ctx.fillRect(10, -18, 6, 4);
-    ctx.fillRect(-16, -18, 4, 10);
-    ctx.fillRect(12, -18, 4, 10);
-    
-    // Head
-    ctx.fillStyle = '#fdbcb4';
-    ctx.fillRect(-6, -30, 12, 10);
-    ctx.fillStyle = '#2c3e50';
-    ctx.fillRect(-8, -32, 16, 8);
-    ctx.restore();
-}
-
-function drawSkaterGrab(ctx) {
-    drawSkaterJumping(ctx);
-    
-    // Hand grabbing board
-    ctx.fillStyle = '#fdbcb4';
-    ctx.fillRect(-10, 15, 6, 6);
-}
-
-function drawSkaterKickflip(ctx, frame) {
-    // Rotating board
-    ctx.save();
-    ctx.rotate(frame * Math.PI);
-    ctx.fillStyle = '#8B4513';
-    ctx.fillRect(-20, 25, 40, 4);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(-15, 29, 6, 6);
-    ctx.fillRect(9, 29, 6, 6);
-    ctx.restore();
-    
-    drawSkaterJumping(ctx);
-}
-
-function drawSkaterHandplant(ctx) {
-    // Upside down
-    ctx.save();
-    ctx.scale(1, -1);
-    drawSkaterStanding(ctx, false);
-    ctx.restore();
-    
-    // Hand on ground
-    ctx.fillStyle = '#fdbcb4';
-    ctx.fillRect(-12, 28, 6, 6);
-}
-
-function drawSkaterBail(ctx) {
-    // Fallen position
-    ctx.save();
-    ctx.rotate(1.2);
-    drawSkaterStanding(ctx, false);
-    ctx.restore();
-    
-    // Stars around head
-    ctx.fillStyle = '#FFD700';
-    for (let i = 0; i < 3; i++) {
-        const angle = i * 2.09;
-        const x = Math.cos(angle) * 15;
-        const y = Math.sin(angle) * 15 - 25;
-        ctx.fillRect(x - 2, y - 2, 4, 4);
-    }
-}
-
-function drawSkaterGrind(ctx) {
-    drawSkaterCrouch(ctx);
-    
-    // Sparks
-    ctx.fillStyle = '#FFA500';
-    ctx.fillRect(-18, 24, 2, 2);
-    ctx.fillRect(-14, 26, 2, 2);
-    ctx.fillRect(12, 24, 2, 2);
-    ctx.fillRect(16, 26, 2, 2);
-}
-
-function drawSkater360(ctx) {
-    ctx.save();
-    ctx.rotate(Math.PI / 4);
-    drawSkaterJumping(ctx);
-    ctx.restore();
-}
-
-function drawSkaterCrouch(ctx) {
-    // Skateboard
-    ctx.fillStyle = '#8B4513';
-    ctx.fillRect(-20, 20, 40, 4);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(-15, 24, 6, 6);
-    ctx.fillRect(9, 24, 6, 6);
-    
-    // Crouched legs
-    ctx.fillStyle = '#34495e';
-    ctx.fillRect(-6, 5, 5, 15);
-    ctx.fillRect(1, 5, 5, 15);
-    ctx.fillRect(-8, 0, 7, 8);
-    ctx.fillRect(1, 0, 7, 8);
-    
-    // Crouched body
-    ctx.fillStyle = '#3498db';
-    ctx.fillRect(-8, -12, 16, 15);
-    
-    // Arms
-    ctx.fillRect(-12, -10, 4, 10);
-    ctx.fillRect(8, -10, 4, 10);
-    
-    // Head
-    ctx.fillStyle = '#fdbcb4';
-    ctx.fillRect(-6, -22, 12, 10);
-    ctx.fillStyle = '#2c3e50';
-    ctx.fillRect(-8, -24, 16, 8);
-}
-
-function drawSkaterVictory(ctx) {
-    drawSkaterStanding(ctx, false);
-    
-    // Arms up
-    ctx.fillStyle = '#3498db';
-    ctx.fillRect(-12, -25, 4, 12);
-    ctx.fillRect(8, -25, 4, 12);
-    
-    // Victory hands
-    ctx.fillStyle = '#fdbcb4';
-    ctx.fillRect(-12, -28, 4, 4);
-    ctx.fillRect(8, -28, 4, 4);
-}
-
-function createSkater(x, y) {
-    // Create sprite-based skater
-    const skater = this.physics.add.sprite(x, y, 'skater', 0);
-    skater.setSize(SKATER_WIDTH, SKATER_HEIGHT);
-    skater.setCollideWorldBounds(true);
-    
-    return skater;
 }
 
 function createHalfpipe() {
-    halfpipe = this.add.graphics();
+    const graphics = this.add.graphics();
     
-    // Draw halfpipe curve
-    halfpipe.lineStyle(4, 0x666666, 1);
-    halfpipe.fillStyle(0x999999, 1);
+    // Draw halfpipe visual
+    graphics.lineStyle(4, 0x666666, 1);
+    graphics.fillStyle(0x999999, 0.5);
     
     const startX = 220;
-    const startY = 440;
+    const endX = 420;
+    const baseY = 440;
     
-    halfpipe.beginPath();
-    halfpipe.moveTo(startX, startY);
+    graphics.beginPath();
+    graphics.moveTo(startX, baseY);
     
-    // Create halfpipe curve points
-    for (let i = 0; i <= HALFPIPE_CURVE_POINTS; i++) {
-        const angle = (i / HALFPIPE_CURVE_POINTS) * Math.PI;
-        const x = startX + (i / HALFPIPE_CURVE_POINTS) * HALFPIPE_WIDTH;
-        const y = startY - Math.sin(angle) * HALFPIPE_HEIGHT;
-        
-        if (i === 0) {
-            halfpipe.moveTo(x, y);
-        } else {
-            halfpipe.lineTo(x, y);
-        }
+    // Draw U-shape curve
+    for (let x = startX; x <= endX; x += 5) {
+        const t = (x - startX) / HALFPIPE_WIDTH;
+        const y = baseY - Math.sin(t * Math.PI) * HALFPIPE_HEIGHT;
+        graphics.lineTo(x, y);
     }
     
-    halfpipe.lineTo(startX + HALFPIPE_WIDTH, startY);
-    halfpipe.lineTo(startX, startY);
-    halfpipe.closePath();
-    halfpipe.fillPath();
-    halfpipe.strokePath();
+    graphics.lineTo(endX, baseY);
+    graphics.lineTo(startX, baseY);
+    graphics.closePath();
+    graphics.fillPath();
+    graphics.strokePath();
     
-    // Create physics bodies for halfpipe edges
-    const leftEdge = this.add.rectangle(startX - 10, startY - HALFPIPE_HEIGHT/2, 20, HALFPIPE_HEIGHT, 0x666666, 0);
-    const rightEdge = this.add.rectangle(startX + HALFPIPE_WIDTH + 10, startY - HALFPIPE_HEIGHT/2, 20, HALFPIPE_HEIGHT, 0x666666, 0);
-    this.physics.add.existing(leftEdge, true);
-    this.physics.add.existing(rightEdge, true);
+    // Create invisible physics boundaries for halfpipe
+    halfpipe = this.physics.add.staticGroup();
+    
+    // Left wall
+    halfpipe.create(startX - 10, baseY - HALFPIPE_HEIGHT/2, 'pixel')
+        .setScale(20, HALFPIPE_HEIGHT)
+        .refreshBody()
+        .setVisible(false);
+    
+    // Right wall  
+    halfpipe.create(endX + 10, baseY - HALFPIPE_HEIGHT/2, 'pixel')
+        .setScale(20, HALFPIPE_HEIGHT)
+        .refreshBody()
+        .setVisible(false);
 }
 
 function createBackground() {
+    if (background) {
+        background.clear(true, true);
+    }
+    
     background = this.add.group();
     
     if (scene === 'beach') {
@@ -546,21 +198,25 @@ function createBackground() {
         }
         
         // Sand
-        const sand = this.add.rectangle(320, 420, 640, 120, 0xf4a460);
+        const sand = this.add.rectangle(320, 380, 640, 80, 0xf4a460);
         background.add(sand);
         
         // Palm trees
         for (let i = 0; i < 3; i++) {
             const x = 100 + i * 200;
-            const trunk = this.add.rectangle(x, 380, 20, 80, 0x8b4513);
-            const leaves = this.add.circle(x, 340, 40, 0x228b22);
+            const trunk = this.add.rectangle(x, 340, 20, 80, 0x8b4513);
+            const leaves = this.add.circle(x, 300, 40, 0x228b22);
             background.add([trunk, leaves]);
         }
     } else {
         // Parking lot with Hollywood sign
+        // Asphalt
+        const asphalt = this.add.rectangle(320, 380, 640, 80, 0x333333);
+        background.add(asphalt);
+        
         // Mountains
-        const mountain1 = this.add.triangle(100, 400, 0, 100, 100, 0, 200, 100, 0x8b7355, 0.8);
-        const mountain2 = this.add.triangle(300, 400, 0, 120, 150, 0, 300, 120, 0x8b7355, 0.8);
+        const mountain1 = this.add.triangle(150, 350, 0, 150, 100, 0, 200, 150, 0x8b7355);
+        const mountain2 = this.add.triangle(350, 350, 0, 180, 150, 0, 300, 180, 0x967444);
         background.add([mountain1, mountain2]);
         
         // Hollywood sign
@@ -572,17 +228,10 @@ function createBackground() {
         }).setOrigin(0.5);
         background.add([signBg, signText]);
         
-        // Parking lot lines
+        // Parking lines
         for (let i = 0; i < 8; i++) {
-            const line = this.add.rectangle(80 + i * 80, 440, 60, 4, 0xffff00);
+            const line = this.add.rectangle(80 + i * 80, 420, 60, 4, 0xffff00);
             background.add(line);
-        }
-        
-        // Street lights
-        for (let i = 0; i < 3; i++) {
-            const pole = this.add.rectangle(200 + i * 200, 400, 8, 80, 0x333333);
-            const light = this.add.circle(200 + i * 200, 360, 15, 0xffff99);
-            background.add([pole, light]);
         }
     }
 }
@@ -663,102 +312,59 @@ function createObstacle(x, y, type) {
 }
 
 function update() {
-    // Check if skater is in halfpipe zone
+    // Check if in halfpipe
     isInHalfpipe = skater.x > 220 && skater.x < 420;
     
-    // Movement
+    // Basic movement
     if (cursors.left.isDown) {
-        skater.body.setVelocityX(-speed);
-        skater.angle = -5;
+        skater.setVelocityX(-speed);
+        skater.setTint(0xff0000); // Red when moving left
     } else if (cursors.right.isDown) {
-        skater.body.setVelocityX(speed);
-        skater.angle = 5;
+        skater.setVelocityX(speed);
+        skater.setTint(0x00ff00); // Green when moving right
     } else {
-        skater.body.setVelocityX(0);
-        skater.angle = 0;
+        skater.setVelocityX(0);
+        skater.setTint(0x0000ff); // Blue when idle
     }
     
-    // Jump/Tricks
+    // Jump
     if (spaceKey.isDown && skater.body.touching.down) {
-        skater.body.setVelocityY(-400);
+        skater.setVelocityY(-500);
         
-        // Bonus jump in halfpipe
+        // Extra height in halfpipe
         if (isInHalfpipe) {
-            skater.body.setVelocityY(-600);
+            skater.setVelocityY(-700);
             score += 50;
-            combo++;
+            combo = Math.min(5, combo + 0.5);
             comboTimer = 60;
         }
     }
     
-    // Air tricks
-    if (!skater.body.touching.down && Phaser.Input.Keyboard.JustDown(spaceKey)) {
-        const trickRoll = Math.random();
-        if (trickRoll < 0.3) {
-            skater.anims.play('kickflip');
-            score += 50 * combo;
-        } else if (trickRoll < 0.6) {
-            skater.anims.play('grab');
-            score += 75 * combo;
-        } else {
-            skater.anims.play('handplant');
-            score += 100 * combo;
-        }
-        combo = Math.min(5, combo + 0.2);
-        comboTimer = 90;
-    }
-    
-    // Handle halfpipe mechanics
-    if (isInHalfpipe) {
-        const relativeX = (skater.x - 220) / HALFPIPE_WIDTH;
-        if (relativeX >= 0 && relativeX <= 1) {
-            const targetY = halfpipeYMap[Math.round(skater.x)];
-            
-            if (skater.body.touching.down && targetY) {
-                // Follow halfpipe curve
-                skater.y = targetY - SKATER_HEIGHT/2;
-                
-                // Add angular momentum based on position
-                const angle = relativeX * Math.PI;
-                const slopeMultiplier = Math.cos(angle);
-                speed = Math.min(300, speed + slopeMultiplier * 2);
-                
-                // Halfpipe tricks
-                if (spaceKey.isDown && (relativeX < 0.1 || relativeX > 0.9)) {
-                    skater.body.setVelocityY(-800);
-                    score += 100 * combo;
-                    combo = Math.min(5, combo + 0.5);
-                    comboTimer = 120;
-                    skater.anims.play('spin360');
-                }
-            }
-        } else {
-            isInHalfpipe = false;
-        }
-    }
-    
-    // Update animations
-    if (!skater.body.touching.down) {
-        if (!skater.anims.currentAnim || !['jump', 'grab', 'kickflip', 'handplant', 'spin360'].includes(skater.anims.currentAnim.key)) {
-            skater.anims.play('jump');
-        }
-    } else if (Math.abs(skater.body.velocity.x) > 10) {
-        if (skater.body.velocity.x < 0) {
-            skater.anims.play('pushLeft', true);
-            skater.setFlipX(true);
-        } else {
-            skater.anims.play('pushRight', true);
-            skater.setFlipX(false);
+    // Halfpipe boost
+    if (isInHalfpipe && skater.body.touching.down) {
+        const relX = (skater.x - 220) / HALFPIPE_WIDTH;
+        if (relX > 0 && relX < 1) {
+            // Add speed boost on slopes
+            const boost = Math.abs(Math.cos(relX * Math.PI)) * 5;
+            speed = Math.min(400, 200 + boost * 20);
         }
     } else {
-        skater.anims.play('idle', true);
+        speed = 200;
+    }
+    
+    // Air rotation visual
+    if (!skater.body.touching.down) {
+        skater.angle += 5;
+        skater.setTint(0xffff00); // Yellow in air
+    } else {
+        skater.angle = 0;
     }
     
     // Update combo
     if (comboTimer > 0) {
         comboTimer--;
         if (comboTimer === 0) {
-            combo = 0;
+            combo = 1;
         }
     }
     
@@ -766,27 +372,29 @@ function update() {
     obstacles.forEach(obstacle => {
         obstacle.x -= 3;
         
-        // Check collision
-        if (Math.abs(skater.x - obstacle.x) < 30 && Math.abs(skater.y - obstacle.y) < 30) {
-            // Hit obstacle
+        // Simple collision check
+        if (Phaser.Geom.Intersects.RectangleToRectangle(skater.getBounds(), obstacle.getBounds())) {
             score = Math.max(0, score - 10);
-            combo = 0;
-            obstacle.x = -100; // Move off screen
-            skater.anims.play('bail');
+            combo = 1;
+            obstacle.x = -100;
+            skater.setTint(0xff00ff); // Purple on hit
         }
         
-        // Respawn obstacle
+        // Respawn
         if (obstacle.x < -50) {
             obstacle.x = 700 + Math.random() * 200;
         }
     });
     
-    // Update score display
-    scoreText.setText(`Score: ${score}` + (combo > 1 ? ` Combo x${combo}!` : ''));
+    // Score for distance
+    score += 0.1;
+    
+    // Update display
+    scoreText.setText(`Score: ${Math.floor(score)}` + (combo > 1 ? ` Combo x${combo.toFixed(1)}!` : ''));
 }
 
 function updateTimeOfDay() {
-    timeOfDay = (timeOfDay + 1) % 24;
+    timeOfDay = (timeOfDay + 2) % 24;
     updateSkyGradient.call(this);
     
     const timeStr = timeOfDay < 6 || timeOfDay > 20 ? 'Night' :
@@ -798,8 +406,7 @@ function updateTimeOfDay() {
 function switchScene() {
     scene = scene === 'beach' ? 'parking' : 'beach';
     
-    // Clear and recreate background
-    background.clear(true, true);
+    // Recreate background
     createBackground.call(this);
     
     // Generate new obstacles
