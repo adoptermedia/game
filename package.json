@@ -61,7 +61,8 @@
     "tsgen": "cd scripts/tsgen && jsdoc -c jsdoc-tsd.conf.json",
     "test-ts": "cd scripts/tsgen/test && tsc --build tsconfig.json > output.txt",
     "ts": "npm run tsgen && npm run test-ts",
-    "tsdev": "npm run build-tsgen && npm run tsgen && npm run test-ts"
+    "tsdev": "npm run build-tsgen && npm run tsgen && npm run test-ts",
+    "build:vercel": "npm run dist && mkdir -p dist && cp index.html dist/ && cp -r games dist/ && echo 'Build complete. Contents of dist:' && ls -la dist/"
   },
   "keywords": [
     "2d",

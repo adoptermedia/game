@@ -1,0 +1,14 @@
+node_modules
+src
+scripts
+plugins
+changelog
+types
+config
+*.log
+.git
+.gitignore
+README.md
+LICENSE.md
+CHANGELOG.md
+CITATION.cff
