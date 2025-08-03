@@ -16,6 +16,7 @@ const config = {
             debug: false
         }
     },
+    pixelArt: true,
     scene: {
         preload: preload,
         create: create,
@@ -49,12 +50,126 @@ const HALFPIPE_WIDTH = 200;
 const HALFPIPE_HEIGHT = 100;
 const HALFPIPE_CURVE_POINTS = 20;
 
+// Base64 encoded assets (1x1 pixel for procedural generation)
+const PIXEL_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+// Simple sound effect generation (base64 encoded minimal WAV files)
+// These are tiny procedural beeps/clicks for web audio
+const LAND_SOUND_BASE64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='; // Silent placeholder
+const GRIND_SOUND_BASE64 = 'UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA='; // Silent placeholder
+
+// Halfpipe Y-coordinate map for smooth U-shape (x: 220-420)
+const halfpipeYMap = {};
+for (let x = 220; x <= 420; x++) {
+    const relX = (x - 220) / HALFPIPE_WIDTH;
+    const angle = relX * Math.PI;
+    halfpipeYMap[x] = 440 - Math.sin(angle) * HALFPIPE_HEIGHT;
+}
+
 function preload() {
-    // We'll generate all graphics procedurally
-    this.load.image('pixel', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+    // Load base pixel for procedural generation
+    this.load.image('pixel', `data:image/png;base64,${PIXEL_BASE64}`);
+    
+    // Create and load skater sprite sheet procedurally
+    this.load.on('filecomplete-image-pixel', () => {
+        // Generate skater spritesheet
+        const skaterCanvas = this.textures.createCanvas('skater-sheet', 512, 64);
+        const ctx = skaterCanvas.context;
+        
+        // Draw 16 frames of skater animations
+        for (let frame = 0; frame < 16; frame++) {
+            const x = frame * 32;
+            drawSkaterFrame(ctx, x, 0, frame);
+        }
+        
+        skaterCanvas.refresh();
+        
+        // Create sprite sheet from canvas
+        this.textures.addSpriteSheet('skater', skaterCanvas.canvas, {
+            frameWidth: 32,
+            frameHeight: 48
+        });
+    });
 }
 
 function create() {
+    // Create animations
+    this.anims.create({
+        key: 'idle',
+        frames: this.anims.generateFrameNumbers('skater', { start: 0, end: 1 }),
+        frameRate: 4,
+        repeat: -1
+    });
+    
+    this.anims.create({
+        key: 'pushLeft',
+        frames: this.anims.generateFrameNumbers('skater', { start: 2, end: 3 }),
+        frameRate: 8,
+        repeat: -1
+    });
+    
+    this.anims.create({
+        key: 'pushRight',
+        frames: this.anims.generateFrameNumbers('skater', { start: 4, end: 5 }),
+        frameRate: 8,
+        repeat: -1
+    });
+    
+    this.anims.create({
+        key: 'jump',
+        frames: [{ key: 'skater', frame: 6 }],
+        frameRate: 1
+    });
+    
+    this.anims.create({
+        key: 'grab',
+        frames: [{ key: 'skater', frame: 7 }],
+        frameRate: 1
+    });
+    
+    this.anims.create({
+        key: 'kickflip',
+        frames: this.anims.generateFrameNumbers('skater', { start: 8, end: 9 }),
+        frameRate: 16,
+        repeat: 0
+    });
+    
+    this.anims.create({
+        key: 'handplant',
+        frames: [{ key: 'skater', frame: 10 }],
+        frameRate: 1
+    });
+    
+    this.anims.create({
+        key: 'bail',
+        frames: [{ key: 'skater', frame: 11 }],
+        frameRate: 1
+    });
+    
+    this.anims.create({
+        key: 'grind',
+        frames: [{ key: 'skater', frame: 12 }],
+        frameRate: 1
+    });
+    
+    this.anims.create({
+        key: 'spin360',
+        frames: [{ key: 'skater', frame: 13 }],
+        frameRate: 1
+    });
+    
+    this.anims.create({
+        key: 'crouch',
+        frames: [{ key: 'skater', frame: 14 }],
+        frameRate: 1
+    });
+    
+    this.anims.create({
+        key: 'victory',
+        frames: [{ key: 'skater', frame: 15 }],
+        frameRate: 1
+    });
+    
     // Create sky gradient
     skyGradient = this.add.graphics();
     updateSkyGradient.call(this);
@@ -69,7 +184,7 @@ function create() {
     // Create halfpipe
     createHalfpipe.call(this);
     
-    // Create skater (pixel art style)
+    // Create skater sprite
     skater = createSkater.call(this, 100, 400);
     
     // Add collisions
@@ -117,40 +232,259 @@ function create() {
     generateObstacles.call(this);
 }
 
-function createSkater(x, y) {
-    // Create pixel art skater using shapes
-    const container = this.add.container(x, y);
+// Helper function to draw skater frames
+function drawSkaterFrame(ctx, x, y, frame) {
+    ctx.save();
+    ctx.translate(x + 16, y + 24);
     
-    // Body (torso)
-    const body = this.add.rectangle(0, -20, 16, 20, 0x3498db);
+    // Different poses based on frame
+    switch(frame) {
+        case 0: // Idle
+        case 1:
+            drawSkaterStanding(ctx, frame === 1);
+            break;
+        case 2: // Push left
+        case 3:
+            drawSkaterPushing(ctx, true, frame === 3);
+            break;
+        case 4: // Push right
+        case 5:
+            drawSkaterPushing(ctx, false, frame === 5);
+            break;
+        case 6: // Jump
+            drawSkaterJumping(ctx);
+            break;
+        case 7: // Grab
+            drawSkaterGrab(ctx);
+            break;
+        case 8: // Kickflip frame 1
+        case 9: // Kickflip frame 2
+            drawSkaterKickflip(ctx, frame - 8);
+            break;
+        case 10: // Handplant
+            drawSkaterHandplant(ctx);
+            break;
+        case 11: // Bail
+            drawSkaterBail(ctx);
+            break;
+        case 12: // Grind
+            drawSkaterGrind(ctx);
+            break;
+        case 13: // 360 spin
+            drawSkater360(ctx);
+            break;
+        case 14: // Crouch
+            drawSkaterCrouch(ctx);
+            break;
+        case 15: // Victory
+            drawSkaterVictory(ctx);
+            break;
+    }
     
-    // Head
-    const head = this.add.circle(0, -35, 8, 0xfdbcb4);
-    
-    // Helmet
-    const helmet = this.add.ellipse(0, -38, 18, 12, 0x2c3e50);
-    
-    // Arms
-    const leftArm = this.add.rectangle(-8, -15, 6, 16, 0x3498db);
-    const rightArm = this.add.rectangle(8, -15, 6, 16, 0x3498db);
+    ctx.restore();
+}
+
+function drawSkaterStanding(ctx, alt) {
+    // Skateboard
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(-20, 20, 40, 4);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(-15, 24, 6, 6);
+    ctx.fillRect(9, 24, 6, 6);
     
     // Legs
-    const leftLeg = this.add.rectangle(-4, -5, 6, 20, 0x34495e);
-    const rightLeg = this.add.rectangle(4, -5, 6, 20, 0x34495e);
+    ctx.fillStyle = '#34495e';
+    ctx.fillRect(-6, 0, 5, 20);
+    ctx.fillRect(1, 0, 5, 20);
     
+    // Body
+    ctx.fillStyle = '#3498db';
+    ctx.fillRect(-8, -20, 16, 20);
+    
+    // Arms
+    const armOffset = alt ? 2 : 0;
+    ctx.fillRect(-12, -15 + armOffset, 4, 12);
+    ctx.fillRect(8, -15 - armOffset, 4, 12);
+    
+    // Head
+    ctx.fillStyle = '#fdbcb4';
+    ctx.fillRect(-6, -30, 12, 10);
+    
+    // Helmet
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(-8, -32, 16, 8);
+}
+
+function drawSkaterPushing(ctx, left, extended) {
+    drawSkaterStanding(ctx, false);
+    
+    // Pushing leg
+    ctx.fillStyle = '#34495e';
+    if (left) {
+        ctx.fillRect(extended ? -10 : -8, extended ? 15 : 10, 5, extended ? 10 : 15);
+    } else {
+        ctx.fillRect(extended ? 5 : 3, extended ? 15 : 10, 5, extended ? 10 : 15);
+    }
+}
+
+function drawSkaterJumping(ctx) {
+    // Skateboard (rotated)
+    ctx.save();
+    ctx.rotate(0.3);
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(-20, 25, 40, 4);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(-15, 29, 6, 6);
+    ctx.fillRect(9, 29, 6, 6);
+    ctx.restore();
+    
+    // Bent legs
+    ctx.fillStyle = '#34495e';
+    ctx.fillRect(-6, -5, 5, 15);
+    ctx.fillRect(1, -5, 5, 15);
+    ctx.fillRect(-8, 8, 7, 5);
+    ctx.fillRect(1, 8, 7, 5);
+    
+    // Body (leaning)
+    ctx.save();
+    ctx.rotate(-0.1);
+    ctx.fillStyle = '#3498db';
+    ctx.fillRect(-8, -20, 16, 20);
+    
+    // Arms out
+    ctx.fillRect(-16, -18, 6, 4);
+    ctx.fillRect(10, -18, 6, 4);
+    ctx.fillRect(-16, -18, 4, 10);
+    ctx.fillRect(12, -18, 4, 10);
+    
+    // Head
+    ctx.fillStyle = '#fdbcb4';
+    ctx.fillRect(-6, -30, 12, 10);
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(-8, -32, 16, 8);
+    ctx.restore();
+}
+
+function drawSkaterGrab(ctx) {
+    drawSkaterJumping(ctx);
+    
+    // Hand grabbing board
+    ctx.fillStyle = '#fdbcb4';
+    ctx.fillRect(-10, 15, 6, 6);
+}
+
+function drawSkaterKickflip(ctx, frame) {
+    // Rotating board
+    ctx.save();
+    ctx.rotate(frame * Math.PI);
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(-20, 25, 40, 4);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(-15, 29, 6, 6);
+    ctx.fillRect(9, 29, 6, 6);
+    ctx.restore();
+    
+    drawSkaterJumping(ctx);
+}
+
+function drawSkaterHandplant(ctx) {
+    // Upside down
+    ctx.save();
+    ctx.scale(1, -1);
+    drawSkaterStanding(ctx, false);
+    ctx.restore();
+    
+    // Hand on ground
+    ctx.fillStyle = '#fdbcb4';
+    ctx.fillRect(-12, 28, 6, 6);
+}
+
+function drawSkaterBail(ctx) {
+    // Fallen position
+    ctx.save();
+    ctx.rotate(1.2);
+    drawSkaterStanding(ctx, false);
+    ctx.restore();
+    
+    // Stars around head
+    ctx.fillStyle = '#FFD700';
+    for (let i = 0; i < 3; i++) {
+        const angle = i * 2.09;
+        const x = Math.cos(angle) * 15;
+        const y = Math.sin(angle) * 15 - 25;
+        ctx.fillRect(x - 2, y - 2, 4, 4);
+    }
+}
+
+function drawSkaterGrind(ctx) {
+    drawSkaterCrouch(ctx);
+    
+    // Sparks
+    ctx.fillStyle = '#FFA500';
+    ctx.fillRect(-18, 24, 2, 2);
+    ctx.fillRect(-14, 26, 2, 2);
+    ctx.fillRect(12, 24, 2, 2);
+    ctx.fillRect(16, 26, 2, 2);
+}
+
+function drawSkater360(ctx) {
+    ctx.save();
+    ctx.rotate(Math.PI / 4);
+    drawSkaterJumping(ctx);
+    ctx.restore();
+}
+
+function drawSkaterCrouch(ctx) {
     // Skateboard
-    const board = this.add.rectangle(0, 8, 40, 6, 0x8b4513);
-    const wheelLeft = this.add.circle(-12, 11, 3, 0x2c3e50);
-    const wheelRight = this.add.circle(12, 11, 3, 0x2c3e50);
+    ctx.fillStyle = '#8B4513';
+    ctx.fillRect(-20, 20, 40, 4);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(-15, 24, 6, 6);
+    ctx.fillRect(9, 24, 6, 6);
     
-    container.add([board, wheelLeft, wheelRight, leftLeg, rightLeg, body, leftArm, rightArm, head, helmet]);
+    // Crouched legs
+    ctx.fillStyle = '#34495e';
+    ctx.fillRect(-6, 5, 5, 15);
+    ctx.fillRect(1, 5, 5, 15);
+    ctx.fillRect(-8, 0, 7, 8);
+    ctx.fillRect(1, 0, 7, 8);
     
-    // Add physics
-    this.physics.add.existing(container);
-    container.body.setSize(SKATER_WIDTH, SKATER_HEIGHT);
-    container.body.setCollideWorldBounds(true);
+    // Crouched body
+    ctx.fillStyle = '#3498db';
+    ctx.fillRect(-8, -12, 16, 15);
     
-    return container;
+    // Arms
+    ctx.fillRect(-12, -10, 4, 10);
+    ctx.fillRect(8, -10, 4, 10);
+    
+    // Head
+    ctx.fillStyle = '#fdbcb4';
+    ctx.fillRect(-6, -22, 12, 10);
+    ctx.fillStyle = '#2c3e50';
+    ctx.fillRect(-8, -24, 16, 8);
+}
+
+function drawSkaterVictory(ctx) {
+    drawSkaterStanding(ctx, false);
+    
+    // Arms up
+    ctx.fillStyle = '#3498db';
+    ctx.fillRect(-12, -25, 4, 12);
+    ctx.fillRect(8, -25, 4, 12);
+    
+    // Victory hands
+    ctx.fillStyle = '#fdbcb4';
+    ctx.fillRect(-12, -28, 4, 4);
+    ctx.fillRect(8, -28, 4, 4);
+}
+
+function createSkater(x, y) {
+    // Create sprite-based skater
+    const skater = this.physics.add.sprite(x, y, 'skater', 0);
+    skater.setSize(SKATER_WIDTH, SKATER_HEIGHT);
+    skater.setCollideWorldBounds(true);
+    
+    return skater;
 }
 
 function createHalfpipe() {
@@ -357,15 +691,67 @@ function update() {
         }
     }
     
-    // Halfpipe physics
-    if (isInHalfpipe && !skater.body.touching.down) {
-        // Apply curved motion in halfpipe
-        const relativeX = (skater.x - 220) / HALFPIPE_WIDTH;
-        const targetY = 440 - Math.sin(relativeX * Math.PI) * HALFPIPE_HEIGHT;
-        
-        if (skater.y > targetY - 50) {
-            skater.body.setVelocityY(Math.min(skater.body.velocity.y, -100));
+    // Air tricks
+    if (!skater.body.touching.down && Phaser.Input.Keyboard.JustDown(spaceKey)) {
+        const trickRoll = Math.random();
+        if (trickRoll < 0.3) {
+            skater.anims.play('kickflip');
+            score += 50 * combo;
+        } else if (trickRoll < 0.6) {
+            skater.anims.play('grab');
+            score += 75 * combo;
+        } else {
+            skater.anims.play('handplant');
+            score += 100 * combo;
         }
+        combo = Math.min(5, combo + 0.2);
+        comboTimer = 90;
+    }
+    
+    // Handle halfpipe mechanics
+    if (isInHalfpipe) {
+        const relativeX = (skater.x - 220) / HALFPIPE_WIDTH;
+        if (relativeX >= 0 && relativeX <= 1) {
+            const targetY = halfpipeYMap[Math.round(skater.x)];
+            
+            if (skater.body.touching.down && targetY) {
+                // Follow halfpipe curve
+                skater.y = targetY - SKATER_HEIGHT/2;
+                
+                // Add angular momentum based on position
+                const angle = relativeX * Math.PI;
+                const slopeMultiplier = Math.cos(angle);
+                speed = Math.min(300, speed + slopeMultiplier * 2);
+                
+                // Halfpipe tricks
+                if (spaceKey.isDown && (relativeX < 0.1 || relativeX > 0.9)) {
+                    skater.body.setVelocityY(-800);
+                    score += 100 * combo;
+                    combo = Math.min(5, combo + 0.5);
+                    comboTimer = 120;
+                    skater.anims.play('spin360');
+                }
+            }
+        } else {
+            isInHalfpipe = false;
+        }
+    }
+    
+    // Update animations
+    if (!skater.body.touching.down) {
+        if (!skater.anims.currentAnim || !['jump', 'grab', 'kickflip', 'handplant', 'spin360'].includes(skater.anims.currentAnim.key)) {
+            skater.anims.play('jump');
+        }
+    } else if (Math.abs(skater.body.velocity.x) > 10) {
+        if (skater.body.velocity.x < 0) {
+            skater.anims.play('pushLeft', true);
+            skater.setFlipX(true);
+        } else {
+            skater.anims.play('pushRight', true);
+            skater.setFlipX(false);
+        }
+    } else {
+        skater.anims.play('idle', true);
     }
     
     // Update combo
@@ -386,6 +772,7 @@ function update() {
             score = Math.max(0, score - 10);
             combo = 0;
             obstacle.x = -100; // Move off screen
+            skater.anims.play('bail');
         }
         
         // Respawn obstacle
