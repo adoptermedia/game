@@ -7,7 +7,7 @@ When deploying on Vercel, use these settings:
    - Connect your GitHub repository
    - Import the project
 
-2. CONFIGURE PROJECT
+2. CONFIGURE PROJECT (Vercel will auto-detect from vercel.json)
    Framework Preset: Other
    Root Directory: ./
    Build Command: npm run dist && cp index.html dist/ && cp -r games dist/
@@ -15,26 +15,39 @@ When deploying on Vercel, use these settings:
    Install Command: npm install
 
 3. ENVIRONMENT VARIABLES
-   - None required for basic deployment
+   - None required
 
 4. BUILD & DEPLOYMENT SETTINGS
-   Node.js Version: 18.x (or latest LTS)
+   Node.js Version: 18.x (recommended)
    
-5. FUNCTIONS (Optional)
-   - Not required for this static game site
+PROJECT STRUCTURE:
+/
+├── src/            (Phaser source code)
+├── dist/           (Built files - this becomes the public root)
+│   ├── index.html  (Landing page)
+│   ├── phaser.min.js
+│   └── games/
+│       ├── demo-platformer/
+│       └── tic-tac-toe/
+├── games/          (Game source files)
+├── package.json
+└── vercel.json     (Deployment configuration)
 
-NOTES:
-- The vercel.json file in the project root will override these settings
-- The build command compiles Phaser and copies all game files to dist/
-- Games are served from /games/[game-name]/ paths
-- The landing page is served from the root /
+HOW IT WORKS:
+1. Build command runs `npm run dist` to compile Phaser to dist/
+2. Then copies index.html and games/ folder into dist/
+3. Vercel serves everything from dist/ as the public root
+4. All paths are relative to dist/ (e.g., /phaser.min.js, /games/tic-tac-toe/)
 
 DEPLOYMENT STEPS:
 1. Push code to GitHub
 2. Go to vercel.com
 3. Click "Add New Project"
 4. Import your GitHub repository
-5. Use the settings above (or rely on vercel.json auto-detection)
+5. Vercel will auto-detect settings from vercel.json
 6. Click "Deploy"
 
-The deployment will automatically use the vercel.json configuration file.
+TROUBLESHOOTING:
+- If deployment fails, check build logs
+- Ensure all file paths use absolute paths (starting with /)
+- The dist folder is the public root - all URLs are relative to it
