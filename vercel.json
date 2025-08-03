@@ -25,7 +25,16 @@
       ]
     },
     {
-      "source": "/(.*).js",
+      "source": "/**/*.js",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/javascript; charset=utf-8"
+        }
+      ]
+    },
+    {
+      "source": "/games/**/*.js",
       "headers": [
         {
           "key": "Content-Type",

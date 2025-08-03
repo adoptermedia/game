@@ -154,33 +154,8 @@
                 return;
             }
             
-            // Calculate window size for 4:3 aspect ratio
-            const baseWidth = 640;
-            const baseHeight = 480;
-            const scale = Math.min(
-                (screen.availWidth * 0.8) / baseWidth,
-                (screen.availHeight * 0.8) / baseHeight
-            );
-            
-            const windowWidth = Math.round(baseWidth * scale);
-            const windowHeight = Math.round(baseHeight * scale);
-            
-            // Center the window
-            const left = Math.round((screen.availWidth - windowWidth) / 2);
-            const top = Math.round((screen.availHeight - windowHeight) / 2);
-            
-            // Open game in new window
-            const gameWindow = window.open(
-                `/games/${gameId}/`,
-                gameId,
-                `width=${windowWidth},height=${windowHeight},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,directories=no,status=no`
-            );
-            
-            if (gameWindow) {
-                gameWindow.focus();
-            } else {
-                alert('Please allow pop-ups to play games in fullscreen mode.');
-            }
+            // Navigate to game in same window
+            window.location.href = `/games/${gameId}/`;
         }
     </script>
 </body>
