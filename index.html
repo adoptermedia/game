@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Launcher</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            color: white;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+        
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            width: 100%;
+            max-width: 1200px;
+        }
+        
+        .game-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .game-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .game-thumbnail {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3em;
+        }
+        
+        .game-title {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+        
+        .game-description {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        
+        .play-button {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .play-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        .footer {
+            margin-top: 50px;
+            text-align: center;
+            opacity: 0.7;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Game Launcher</h1>
+        <p>Select a game to play in fullscreen 4:3 mode</p>
+    </div>
+    
+    <div class="games-grid">
+        <div class="game-card" onclick="launchGame('demo-platformer')">
+            <div class="game-thumbnail">🎮</div>
+            <h2 class="game-title">Demo Platformer</h2>
+            <p class="game-description">A simple platformer game with jumping mechanics. Use arrow keys to move and explore the platforms!</p>
+            <button class="play-button">Play Now</button>
+        </div>
+        
+        <div class="game-card" onclick="launchGame('coming-soon')">
+            <div class="game-thumbnail" style="background: linear-gradient(45deg, #f093fb, #f5576c);">🚀</div>
+            <h2 class="game-title">Space Adventure</h2>
+            <p class="game-description">Coming soon! An exciting space exploration game with asteroid dodging and alien encounters.</p>
+            <button class="play-button" disabled style="opacity: 0.5;">Coming Soon</button>
+        </div>
+        
+        <div class="game-card" onclick="launchGame('coming-soon')">
+            <div class="game-thumbnail" style="background: linear-gradient(45deg, #fa709a, #fee140);">🧩</div>
+            <h2 class="game-title">Puzzle Master</h2>
+            <p class="game-description">Coming soon! Challenge your mind with increasingly difficult puzzles and brain teasers.</p>
+            <button class="play-button" disabled style="opacity: 0.5;">Coming Soon</button>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>All games run at 640x480 resolution (4:3 aspect ratio)</p>
+    </div>
+    
+    <script>
+        function launchGame(gameId) {
+            if (gameId === 'coming-soon') {
+                alert('This game is coming soon!');
+                return;
+            }
+            
+            // Calculate window size for 4:3 aspect ratio
+            const baseWidth = 640;
+            const baseHeight = 480;
+            const scale = Math.min(
+                (screen.availWidth * 0.8) / baseWidth,
+                (screen.availHeight * 0.8) / baseHeight
+            );
+            
+            const windowWidth = Math.round(baseWidth * scale);
+            const windowHeight = Math.round(baseHeight * scale);
+            
+            // Center the window
+            const left = Math.round((screen.availWidth - windowWidth) / 2);
+            const top = Math.round((screen.availHeight - windowHeight) / 2);
+            
+            // Open game in new window
+            const gameWindow = window.open(
+                `/games/${gameId}/`,
+                gameId,
+                `width=${windowWidth},height=${windowHeight},left=${left},top=${top},resizable=yes,scrollbars=no,toolbar=no,menubar=no,location=no,directories=no,status=no`
+            );
+            
+            if (gameWindow) {
+                gameWindow.focus();
+            } else {
+                alert('Please allow pop-ups to play games in fullscreen mode.');
+            }
+        }
+    </script>
+</body>
+</html>

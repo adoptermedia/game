@@ -1,0 +1,40 @@
+VERCEL DEPLOYMENT SETTINGS
+========================
+
+When deploying on Vercel, use these settings:
+
+1. IMPORT PROJECT
+   - Connect your GitHub repository
+   - Import the project
+
+2. CONFIGURE PROJECT
+   Framework Preset: Other
+   Root Directory: ./
+   Build Command: npm run dist && cp index.html dist/ && cp -r games dist/
+   Output Directory: dist
+   Install Command: npm install
+
+3. ENVIRONMENT VARIABLES
+   - None required for basic deployment
+
+4. BUILD & DEPLOYMENT SETTINGS
+   Node.js Version: 18.x (or latest LTS)
+   
+5. FUNCTIONS (Optional)
+   - Not required for this static game site
+
+NOTES:
+- The vercel.json file in the project root will override these settings
+- The build command compiles Phaser and copies all game files to dist/
+- Games are served from /games/[game-name]/ paths
+- The landing page is served from the root /
+
+DEPLOYMENT STEPS:
+1. Push code to GitHub
+2. Go to vercel.com
+3. Click "Add New Project"
+4. Import your GitHub repository
+5. Use the settings above (or rely on vercel.json auto-detection)
+6. Click "Deploy"
+
+The deployment will automatically use the vercel.json configuration file.
