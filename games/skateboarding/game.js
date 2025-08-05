@@ -12,7 +12,7 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { y: 800 },
+            gravity: { y: 0 }, // We'll handle gravity manually
             debug: false
         }
     },
@@ -30,12 +30,15 @@ let cursors;
 let aKey;
 let sKey;
 let halfpipeGraphics;
-let halfpipeBody;
-let velocity = 0;
-let onRamp = false;
-let kickPower = 0;
 let debugText;
-let rampZones = [];
+
+// Physics variables
+let position = 400; // X position along halfpipe
+let velocity = 0; // Horizontal velocity
+let verticalVelocity = 0; // For jumping
+let isAirborne = false;
+let airHeight = 0; // Height above halfpipe
+let kickPower = 0;
 
 // Halfpipe dimensions
 const HALFPIPE_LEFT = 75;
@@ -47,12 +50,12 @@ const HALFPIPE_HEIGHT = HALFPIPE_BOTTOM - HALFPIPE_TOP;
 const HALFPIPE_CENTER = (HALFPIPE_LEFT + HALFPIPE_RIGHT) / 2;
 
 // Physics constants
-const GRAVITY = 800;
-const FRICTION = 0.985;
-const KICK_FORCE = 200;
-const JUMP_FORCE = 500;
-const MAX_SPEED = 600;
-const RAMP_BOOST = 15;
+const GRAVITY = 25;
+const FRICTION = 0.98;
+const KICK_FORCE = 5;
+const JUMP_FORCE = 15;
+const MAX_SPEED = 15;
+const SLOPE_GRAVITY = 0.5;
 
 function preload() {
     // Create a simple white pixel for drawing
@@ -64,25 +67,8 @@ function create() {
     halfpipeGraphics = this.add.graphics();
     drawHalfpipe.call(this);
     
-    // Create halfpipe collision body
-    createHalfpipeCollision.call(this);
-    
     // Create skater (simple box)
-    skater = this.physics.add.sprite(400, 200, 'pixel');
-    skater.setScale(30, 40);
-    skater.setTint(0xff0000);
-    skater.setBounce(0);
-    skater.setCollideWorldBounds(true);
-    skater.body.setMaxVelocity(MAX_SPEED, 1000);
-    
-    // Prevent rotation
-    skater.body.setAllowRotation(false);
-    
-    // Setup collision
-    this.physics.add.collider(skater, halfpipeBody);
-    
-    // Create ramp detection zones
-    createRampZones.call(this);
+    skater = this.add.rectangle(position, 300, 30, 40, 0xff0000);
     
     // Controls
     cursors = this.input.keyboard.createCursorKeys();
@@ -116,16 +102,9 @@ function drawHalfpipe() {
     halfpipeGraphics.beginPath();
     halfpipeGraphics.moveTo(HALFPIPE_LEFT, HALFPIPE_TOP);
     
-    // Create smooth U curve using quadratic function
-    const points = [];
+    // Create smooth U curve
     for (let x = HALFPIPE_LEFT; x <= HALFPIPE_RIGHT; x += 5) {
-        // Normalize x to range [-1, 1]
-        const normalizedX = ((x - HALFPIPE_CENTER) / (HALFPIPE_WIDTH / 2));
-        
-        // Create parabolic U shape: y = ax^2 + b
-        const y = HALFPIPE_BOTTOM - (1 - normalizedX * normalizedX) * HALFPIPE_HEIGHT;
-        
-        points.push({x, y});
+        const y = getHalfpipeY(x);
         halfpipeGraphics.lineTo(x, y);
     }
     
@@ -146,135 +125,112 @@ function drawHalfpipe() {
     halfpipeGraphics.lineBetween(HALFPIPE_CENTER, HALFPIPE_BOTTOM, HALFPIPE_CENTER, HALFPIPE_TOP);
 }
 
-function createHalfpipeCollision() {
-    // Create a compound body for the halfpipe
-    halfpipeBody = this.physics.add.staticGroup();
+// Get Y position for any X position on the halfpipe
+function getHalfpipeY(x) {
+    // Clamp x to halfpipe bounds
+    x = Math.max(HALFPIPE_LEFT, Math.min(HALFPIPE_RIGHT, x));
     
-    // Create small segments to approximate the curve
-    const segments = 40;
+    // Normalize x to range [-1, 1]
+    const normalizedX = ((x - HALFPIPE_CENTER) / (HALFPIPE_WIDTH / 2));
     
-    for (let i = 0; i < segments; i++) {
-        const x1 = HALFPIPE_LEFT + (HALFPIPE_WIDTH / segments) * i;
-        const x2 = HALFPIPE_LEFT + (HALFPIPE_WIDTH / segments) * (i + 1);
-        
-        // Calculate y positions using same parabolic function
-        const norm1 = ((x1 - HALFPIPE_CENTER) / (HALFPIPE_WIDTH / 2));
-        const norm2 = ((x2 - HALFPIPE_CENTER) / (HALFPIPE_WIDTH / 2));
-        
-        const y1 = HALFPIPE_BOTTOM - (1 - norm1 * norm1) * HALFPIPE_HEIGHT;
-        const y2 = HALFPIPE_BOTTOM - (1 - norm2 * norm2) * HALFPIPE_HEIGHT;
-        
-        // Create platform segment
-        const centerX = (x1 + x2) / 2;
-        const centerY = (y1 + y2) / 2;
-        const angle = Math.atan2(y2 - y1, x2 - x1);
-        const length = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
-        
-        const segment = halfpipeBody.create(centerX, centerY, 'pixel');
-        segment.setScale(length + 2, 20);
-        segment.setAngle(angle * 180 / Math.PI);
-        segment.setAlpha(0); // Make invisible
-        segment.refreshBody();
-    }
-    
-    // Add floor segments at the bottom
-    halfpipeBody.create(HALFPIPE_CENTER, HALFPIPE_BOTTOM + 10, 'pixel')
-        .setScale(HALFPIPE_WIDTH * 0.6, 20)
-        .setAlpha(0)
-        .refreshBody();
+    // Create parabolic U shape: y = ax^2 + b
+    return HALFPIPE_BOTTOM - (1 - normalizedX * normalizedX) * HALFPIPE_HEIGHT;
 }
 
-function createRampZones() {
-    // Left ramp zone
-    const leftZone = this.add.zone(HALFPIPE_LEFT + 100, HALFPIPE_CENTER, 150, 300);
-    this.physics.add.existing(leftZone, true);
-    leftZone.body.setAllowGravity(false);
-    rampZones.push({ zone: leftZone, side: 'left' });
-    
-    // Right ramp zone
-    const rightZone = this.add.zone(HALFPIPE_RIGHT - 100, HALFPIPE_CENTER, 150, 300);
-    this.physics.add.existing(rightZone, true);
-    rightZone.body.setAllowGravity(false);
-    rampZones.push({ zone: rightZone, side: 'right' });
-    
-    // Check overlaps
-    rampZones.forEach(ramp => {
-        this.physics.add.overlap(skater, ramp.zone, () => {
-            onRamp = ramp.side;
-        });
-    });
+// Get the slope angle at a given X position
+function getHalfpipeSlope(x) {
+    // Calculate derivative of the parabola to get slope
+    const normalizedX = ((x - HALFPIPE_CENTER) / (HALFPIPE_WIDTH / 2));
+    const slope = 2 * normalizedX * HALFPIPE_HEIGHT / (HALFPIPE_WIDTH / 2);
+    return Math.atan(slope);
 }
 
 function update() {
-    // Reset ramp state
-    onRamp = false;
-    
-    // Check if on ground
-    const isGrounded = skater.body.blocked.down || skater.body.touching.down;
-    
-    // Apply custom physics when on ramp
-    if (skater.x < HALFPIPE_LEFT + 150 || skater.x > HALFPIPE_RIGHT - 150) {
-        // On the slopes - add gravity assist
-        const side = skater.x < HALFPIPE_CENTER ? -1 : 1;
-        velocity += side * RAMP_BOOST;
+    // Apply gravity based on position on halfpipe
+    if (!isAirborne) {
+        const slope = getHalfpipeSlope(position);
+        velocity += Math.sin(slope) * SLOPE_GRAVITY;
     }
     
-    // Apply friction when grounded
-    if (isGrounded) {
-        velocity *= FRICTION;
-    }
+    // Apply friction
+    velocity *= FRICTION;
     
     // Controls
     if (cursors.left.isDown) {
-        velocity -= 8;
+        velocity -= 0.3;
     } else if (cursors.right.isDown) {
-        velocity += 8;
+        velocity += 0.3;
     }
     
-    // A key - Kick/Push (only when grounded)
-    if (aKey.isDown && isGrounded) {
-        kickPower = Math.min(kickPower + 3, 100);
+    // A key - Kick/Push
+    if (aKey.isDown && !isAirborne) {
+        kickPower = Math.min(kickPower + 2, 100);
     } else if (kickPower > 0) {
-        velocity += (kickPower * KICK_FORCE) / 100;
+        velocity += (kickPower / 100) * KICK_FORCE;
         kickPower = 0;
     }
     
-    // S key - Jump (only when grounded)
-    if (Phaser.Input.Keyboard.JustDown(sKey) && isGrounded) {
-        skater.setVelocityY(-JUMP_FORCE);
+    // S key - Jump
+    if (Phaser.Input.Keyboard.JustDown(sKey) && !isAirborne) {
+        isAirborne = true;
+        verticalVelocity = -JUMP_FORCE;
         
         // Add extra height based on speed
-        if (Math.abs(velocity) > 300) {
-            skater.setVelocityY(-JUMP_FORCE * 1.3);
+        if (Math.abs(velocity) > 8) {
+            verticalVelocity = -JUMP_FORCE * 1.5;
         }
     }
     
     // Limit velocity
     velocity = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, velocity));
     
-    // Apply horizontal velocity
-    skater.setVelocityX(velocity);
+    // Update position
+    position += velocity;
     
-    // Keep skater upright
-    skater.setRotation(0);
+    // Keep within bounds
+    if (position < HALFPIPE_LEFT) {
+        position = HALFPIPE_LEFT;
+        velocity = -velocity * 0.5; // Bounce off wall
+    } else if (position > HALFPIPE_RIGHT) {
+        position = HALFPIPE_RIGHT;
+        velocity = -velocity * 0.5; // Bounce off wall
+    }
+    
+    // Handle airborne physics
+    if (isAirborne) {
+        airHeight += verticalVelocity;
+        verticalVelocity += GRAVITY / 60; // Apply gravity
+        
+        // Check if landed
+        if (airHeight >= 0) {
+            airHeight = 0;
+            isAirborne = false;
+            verticalVelocity = 0;
+        }
+    }
+    
+    // Calculate skater position
+    const baseY = getHalfpipeY(position);
+    skater.x = position;
+    skater.y = baseY + airHeight;
     
     // Visual feedback
-    if (!isGrounded) {
-        skater.setTint(0xffff00); // Yellow in air
+    if (isAirborne) {
+        skater.fillColor = 0xffff00; // Yellow in air
     } else if (kickPower > 0) {
-        skater.setTint(0x00ff00); // Green when charging kick
-    } else if (Math.abs(velocity) > 400) {
-        skater.setTint(0xff00ff); // Purple at high speed
+        skater.fillColor = 0x00ff00; // Green when charging kick
+    } else if (Math.abs(velocity) > 10) {
+        skater.fillColor = 0xff00ff; // Purple at high speed
     } else {
-        skater.setTint(0xff0000); // Red normally
+        skater.fillColor = 0xff0000; // Red normally
     }
     
     // Update debug info
     debugText.setText([
-        `Speed: ${Math.abs(velocity).toFixed(0)}`,
-        `Grounded: ${isGrounded}`,
-        `Kick Power: ${kickPower}%`,
-        `Position: ${skater.x.toFixed(0)}, ${skater.y.toFixed(0)}`
+        `Speed: ${Math.abs(velocity).toFixed(1)}`,
+        `Position: ${position.toFixed(0)}`,
+        `Airborne: ${isAirborne}`,
+        `Kick Power: ${kickPower}%`
     ]);
 }
 
