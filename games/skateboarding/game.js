@@ -13,7 +13,7 @@ const config = {
         default: 'arcade',
         arcade: {
             gravity: { y: 0 }, // We'll handle gravity manually
-            debug: false
+            debug: true
         }
     },
     pixelArt: true,
