@@ -226,11 +226,18 @@ function update() {
     }
     
     // Update debug info
+    const slope = getHalfpipeSlope(position);
+    const slopeDegrees = (slope * 180 / Math.PI).toFixed(1);
+    
     debugText.setText([
         `Speed: ${Math.abs(velocity).toFixed(1)}`,
         `Position: ${position.toFixed(0)}`,
         `Airborne: ${isAirborne}`,
-        `Kick Power: ${kickPower}%`
+        `Kick Power: ${kickPower}%`,
+        `Slope: ${slopeDegrees}°`,
+        `Height: ${airHeight.toFixed(1)}`,
+        `Y Velocity: ${verticalVelocity.toFixed(1)}`,
+        `FPS: ${this.game.loop.actualFps.toFixed(0)}`
     ]);
 }
 
