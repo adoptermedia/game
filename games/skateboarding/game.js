@@ -1,8 +1,8 @@
-// Skateboarding game configuration
+// Skateboarding Halfpipe Physics Demo
 const config = {
     type: Phaser.AUTO,
-    width: 640,
-    height: 480,
+    width: 800,
+    height: 600,
     parent: 'game-container',
     backgroundColor: '#87CEEB',
     scale: {
@@ -12,7 +12,7 @@ const config = {
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: { y: 800 },
+            gravity: { y: 1200 },
             debug: false
         }
     },
@@ -26,391 +26,256 @@ const config = {
 
 // Game variables
 let skater;
-let ground;
-let halfpipe;
-let obstacles = [];
-let score = 0;
-let scoreText;
-let scene = 'beach'; // 'beach' or 'parking'
-let timeOfDay = 0; // 0-24 for day/night cycle
-let background;
 let cursors;
-let spaceKey;
-let isInHalfpipe = false;
-let speed = 200;
-let combo = 1;
-let comboTimer = 0;
-let skyGradient;
+let aKey;
+let sKey;
+let halfpipeGraphics;
+let halfpipePhysics = [];
+let velocity = 0;
+let onHalfpipe = false;
+let airborne = false;
+let angle = 0;
+let kickPower = 0;
+let debugText;
 
-// Pixel measurements
-const SKATER_WIDTH = 32;
-const SKATER_HEIGHT = 48;
-const HALFPIPE_WIDTH = 200;
-const HALFPIPE_HEIGHT = 100;
+// Halfpipe dimensions
+const HALFPIPE_LEFT = 75;
+const HALFPIPE_RIGHT = 725;
+const HALFPIPE_BOTTOM = 500;
+const HALFPIPE_TOP = 250;
+const HALFPIPE_WIDTH = HALFPIPE_RIGHT - HALFPIPE_LEFT;
+const HALFPIPE_HEIGHT = HALFPIPE_BOTTOM - HALFPIPE_TOP;
 
-// Base64 encoded assets
-const PIXEL_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+// Physics constants
+const GRAVITY = 1200;
+const FRICTION = 0.98;
+const KICK_FORCE = 150;
+const JUMP_FORCE = 600;
+const MAX_SPEED = 800;
 
 function preload() {
-    // Load base pixel for drawing
-    this.load.image('pixel', `data:image/png;base64,${PIXEL_BASE64}`);
+    // Create a simple white pixel for drawing
+    this.load.image('pixel', 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
 }
 
 function create() {
-    // Create sky gradient
-    skyGradient = this.add.graphics();
-    updateSkyGradient.call(this);
+    // Create halfpipe visual
+    halfpipeGraphics = this.add.graphics();
+    drawHalfpipe.call(this);
     
-    // Create background elements
-    createBackground.call(this);
+    // Create halfpipe physics bodies
+    createHalfpipePhysics.call(this);
     
-    // Create ground
-    ground = this.physics.add.staticGroup();
-    ground.create(320, 460, 'pixel').setScale(640, 40).refreshBody().setTint(0x4a4a4a);
-    
-    // Create halfpipe
-    createHalfpipe.call(this);
-    
-    // Create skater as a simple rectangle sprite for now
-    skater = this.physics.add.sprite(100, 400, 'pixel');
-    skater.setScale(SKATER_WIDTH, SKATER_HEIGHT);
-    skater.setTint(0xff0000); // Red for visibility
-    skater.setBounce(0.2);
+    // Create skater (simple box)
+    skater = this.physics.add.sprite(400, 200, 'pixel');
+    skater.setScale(30, 40);
+    skater.setTint(0xff0000);
+    skater.setBounce(0.1);
     skater.setCollideWorldBounds(true);
+    skater.body.setDrag(50, 0);
     
-    // Physics
-    this.physics.add.collider(skater, ground);
-    
-    // Create obstacles
-    generateObstacles.call(this);
-    
-    // UI
-    scoreText = this.add.text(16, 16, 'Score: 0', { 
-        fontSize: '24px', 
-        fill: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 4
+    // Setup collisions
+    halfpipePhysics.forEach(segment => {
+        this.physics.add.collider(skater, segment, handleHalfpipeCollision, null, this);
     });
-    
-    // Time display
-    this.timeText = this.add.text(320, 16, 'Beach - Day', { 
-        fontSize: '20px', 
-        fill: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 4
-    }).setOrigin(0.5, 0);
     
     // Controls
     cursors = this.input.keyboard.createCursorKeys();
-    spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    aKey = this.input.keyboard.addKey('A');
+    sKey = this.input.keyboard.addKey('S');
     
-    // Scene switch button
-    const switchButton = this.add.rectangle(580, 40, 100, 30, 0x333333)
-        .setInteractive()
-        .on('pointerdown', () => switchScene.call(this));
-    
-    this.add.text(580, 40, 'Switch Scene', {
-        fontSize: '14px',
-        fill: '#ffffff'
-    }).setOrigin(0.5);
-    
-    // Controls info
-    this.add.text(320, 460, 'Arrow Keys: Move | Space: Jump/Tricks', {
+    // Debug text
+    debugText = this.add.text(10, 10, '', {
         fontSize: '16px',
-        fill: '#ffffff',
-        stroke: '#000000',
-        strokeThickness: 3
-    }).setOrigin(0.5);
-    
-    // Start day/night cycle
-    this.time.addEvent({
-        delay: 2000,
-        callback: updateTimeOfDay,
-        callbackScope: this,
-        loop: true
+        fill: '#000000'
     });
+    
+    // Instructions
+    this.add.text(400, 550, 'Arrow Keys: Move | A: Kick/Push | S: Jump', {
+        fontSize: '18px',
+        fill: '#000000'
+    }).setOrigin(0.5);
 }
 
-function createHalfpipe() {
-    const graphics = this.add.graphics();
+function drawHalfpipe() {
+    halfpipeGraphics.clear();
     
-    // Draw halfpipe visual
-    graphics.lineStyle(4, 0x666666, 1);
-    graphics.fillStyle(0x999999, 0.5);
+    // Draw background
+    halfpipeGraphics.fillStyle(0xcccccc, 0.3);
+    halfpipeGraphics.fillRect(0, 0, 800, 600);
     
-    const startX = 220;
-    const endX = 420;
-    const baseY = 440;
+    // Draw halfpipe
+    halfpipeGraphics.lineStyle(4, 0x333333, 1);
+    halfpipeGraphics.fillStyle(0x666666, 0.8);
     
-    graphics.beginPath();
-    graphics.moveTo(startX, baseY);
+    halfpipeGraphics.beginPath();
+    halfpipeGraphics.moveTo(HALFPIPE_LEFT, HALFPIPE_TOP);
     
-    // Draw U-shape curve
-    for (let x = startX; x <= endX; x += 5) {
-        const t = (x - startX) / HALFPIPE_WIDTH;
-        const y = baseY - Math.sin(t * Math.PI) * HALFPIPE_HEIGHT;
-        graphics.lineTo(x, y);
-    }
-    
-    graphics.lineTo(endX, baseY);
-    graphics.lineTo(startX, baseY);
-    graphics.closePath();
-    graphics.fillPath();
-    graphics.strokePath();
-    
-    // Create invisible physics boundaries for halfpipe
-    halfpipe = this.physics.add.staticGroup();
-    
-    // Left wall
-    halfpipe.create(startX - 10, baseY - HALFPIPE_HEIGHT/2, 'pixel')
-        .setScale(20, HALFPIPE_HEIGHT)
-        .refreshBody()
-        .setVisible(false);
-    
-    // Right wall  
-    halfpipe.create(endX + 10, baseY - HALFPIPE_HEIGHT/2, 'pixel')
-        .setScale(20, HALFPIPE_HEIGHT)
-        .refreshBody()
-        .setVisible(false);
-}
-
-function createBackground() {
-    if (background) {
-        background.clear(true, true);
-    }
-    
-    background = this.add.group();
-    
-    if (scene === 'beach') {
-        // Beach scene
-        // Ocean
-        const ocean = this.add.rectangle(320, 300, 640, 200, 0x006994);
-        background.add(ocean);
+    // Draw U-shape using bezier curves
+    const segments = 50;
+    for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const x = HALFPIPE_LEFT + (HALFPIPE_WIDTH * t);
         
-        // Waves
-        for (let i = 0; i < 5; i++) {
-            const wave = this.add.ellipse(
-                100 + i * 150 + Math.random() * 50, 
-                280 + Math.random() * 40, 
-                80, 20, 0x0099cc
-            );
-            background.add(wave);
+        // Create U-shape: steep at edges, flat at bottom
+        let normalizedX = (x - HALFPIPE_LEFT) / HALFPIPE_WIDTH;
+        let y;
+        
+        if (normalizedX < 0.2) {
+            // Left wall
+            y = HALFPIPE_TOP + (HALFPIPE_HEIGHT * (normalizedX / 0.2));
+        } else if (normalizedX > 0.8) {
+            // Right wall
+            y = HALFPIPE_TOP + (HALFPIPE_HEIGHT * ((1 - normalizedX) / 0.2));
+        } else {
+            // Bottom curve
+            const curveX = (normalizedX - 0.2) / 0.6;
+            y = HALFPIPE_BOTTOM - Math.cos(curveX * Math.PI) * 20;
         }
         
-        // Sand
-        const sand = this.add.rectangle(320, 380, 640, 80, 0xf4a460);
-        background.add(sand);
+        halfpipeGraphics.lineTo(x, y);
+    }
+    
+    halfpipeGraphics.strokePath();
+    
+    // Draw coping (edges)
+    halfpipeGraphics.fillStyle(0xff6600, 1);
+    halfpipeGraphics.fillCircle(HALFPIPE_LEFT, HALFPIPE_TOP, 8);
+    halfpipeGraphics.fillCircle(HALFPIPE_RIGHT, HALFPIPE_TOP, 8);
+}
+
+function createHalfpipePhysics() {
+    // Clear existing physics bodies
+    halfpipePhysics.forEach(body => body.destroy());
+    halfpipePhysics = [];
+    
+    // Create physics segments for the halfpipe
+    const segments = 20;
+    
+    for (let i = 0; i < segments; i++) {
+        const t1 = i / segments;
+        const t2 = (i + 1) / segments;
         
-        // Palm trees
-        for (let i = 0; i < 3; i++) {
-            const x = 100 + i * 200;
-            const trunk = this.add.rectangle(x, 340, 20, 80, 0x8b4513);
-            const leaves = this.add.circle(x, 300, 40, 0x228b22);
-            background.add([trunk, leaves]);
+        const x1 = HALFPIPE_LEFT + (HALFPIPE_WIDTH * t1);
+        const x2 = HALFPIPE_LEFT + (HALFPIPE_WIDTH * t2);
+        
+        let y1, y2;
+        
+        // Calculate y positions for each segment
+        const normalized1 = t1;
+        const normalized2 = t2;
+        
+        if (normalized1 < 0.2) {
+            y1 = HALFPIPE_TOP + (HALFPIPE_HEIGHT * (normalized1 / 0.2));
+        } else if (normalized1 > 0.8) {
+            y1 = HALFPIPE_TOP + (HALFPIPE_HEIGHT * ((1 - normalized1) / 0.2));
+        } else {
+            const curveX = (normalized1 - 0.2) / 0.6;
+            y1 = HALFPIPE_BOTTOM - Math.cos(curveX * Math.PI) * 20;
         }
-    } else {
-        // Parking lot with Hollywood sign
-        // Asphalt
-        const asphalt = this.add.rectangle(320, 380, 640, 80, 0x333333);
-        background.add(asphalt);
         
-        // Mountains
-        const mountain1 = this.add.triangle(150, 350, 0, 150, 100, 0, 200, 150, 0x8b7355);
-        const mountain2 = this.add.triangle(350, 350, 0, 180, 150, 0, 300, 180, 0x967444);
-        background.add([mountain1, mountain2]);
-        
-        // Hollywood sign
-        const signBg = this.add.rectangle(400, 200, 160, 40, 0xffffff);
-        const signText = this.add.text(400, 200, 'HOLLYWOOD', {
-            fontSize: '16px',
-            fill: '#000000',
-            fontStyle: 'bold'
-        }).setOrigin(0.5);
-        background.add([signBg, signText]);
-        
-        // Parking lines
-        for (let i = 0; i < 8; i++) {
-            const line = this.add.rectangle(80 + i * 80, 420, 60, 4, 0xffff00);
-            background.add(line);
+        if (normalized2 < 0.2) {
+            y2 = HALFPIPE_TOP + (HALFPIPE_HEIGHT * (normalized2 / 0.2));
+        } else if (normalized2 > 0.8) {
+            y2 = HALFPIPE_TOP + (HALFPIPE_HEIGHT * ((1 - normalized2) / 0.2));
+        } else {
+            const curveX = (normalized2 - 0.2) / 0.6;
+            y2 = HALFPIPE_BOTTOM - Math.cos(curveX * Math.PI) * 20;
         }
+        
+        // Create angled platform for this segment
+        const centerX = (x1 + x2) / 2;
+        const centerY = (y1 + y2) / 2;
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        
+        const platform = this.physics.add.staticSprite(centerX, centerY, 'pixel');
+        platform.setScale(length, 10);
+        platform.setAngle(angle * 180 / Math.PI);
+        platform.setVisible(false);
+        platform.refreshBody();
+        
+        halfpipePhysics.push(platform);
     }
 }
 
-function updateSkyGradient() {
-    skyGradient.clear();
+function handleHalfpipeCollision(skater, platform) {
+    onHalfpipe = true;
     
-    // Calculate sky colors based on time
-    let topColor, bottomColor;
+    // Get the angle of the platform
+    const platformAngle = platform.angle * Math.PI / 180;
     
-    if (timeOfDay < 6 || timeOfDay > 20) {
-        // Night
-        topColor = 0x0f0f2e;
-        bottomColor = 0x1a1a3e;
-    } else if (timeOfDay < 8 || timeOfDay > 18) {
-        // Dawn/Dusk
-        topColor = 0xff6b6b;
-        bottomColor = 0xfeca57;
-    } else {
-        // Day
-        topColor = 0x87ceeb;
-        bottomColor = 0xb8e6ff;
+    // Apply momentum based on angle
+    if (Math.abs(platformAngle) > 0.1) {
+        const slopeForce = Math.sin(platformAngle) * 50;
+        velocity += slopeForce;
     }
-    
-    // Draw gradient
-    for (let i = 0; i < 240; i++) {
-        const ratio = i / 240;
-        const color = Phaser.Display.Color.Interpolate.ColorWithColor(
-            Phaser.Display.Color.ValueToColor(topColor),
-            Phaser.Display.Color.ValueToColor(bottomColor),
-            240, i
-        );
-        skyGradient.fillStyle(Phaser.Display.Color.GetColor(color.r, color.g, color.b));
-        skyGradient.fillRect(0, i * 2, 640, 2);
-    }
-}
-
-function generateObstacles() {
-    // Clear existing obstacles
-    obstacles.forEach(obs => obs.destroy());
-    obstacles = [];
-    
-    const obstacleTypes = scene === 'beach' 
-        ? ['cone', 'sandcastle', 'shell'] 
-        : ['cone', 'barrier', 'trash'];
-    
-    for (let i = 0; i < 5; i++) {
-        const x = 500 + i * 200;
-        const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
-        const obstacle = createObstacle.call(this, x, 430, type);
-        obstacles.push(obstacle);
-    }
-}
-
-function createObstacle(x, y, type) {
-    let obstacle;
-    
-    switch(type) {
-        case 'cone':
-            obstacle = this.add.triangle(x, y, 0, 20, 10, 0, 20, 20, 0xff6600);
-            break;
-        case 'sandcastle':
-            obstacle = this.add.rectangle(x, y, 30, 25, 0xdaa520);
-            break;
-        case 'shell':
-            obstacle = this.add.circle(x, y, 10, 0xffc0cb);
-            break;
-        case 'barrier':
-            obstacle = this.add.rectangle(x, y, 40, 20, 0xff0000);
-            break;
-        case 'trash':
-            obstacle = this.add.rectangle(x, y, 15, 20, 0x666666);
-            break;
-    }
-    
-    this.physics.add.existing(obstacle, true);
-    return obstacle;
 }
 
 function update() {
-    // Check if in halfpipe
-    isInHalfpipe = skater.x > 220 && skater.x < 420;
+    // Reset halfpipe state
+    onHalfpipe = false;
+    airborne = !skater.body.touching.down;
     
-    // Basic movement
+    // Apply friction when on ground
+    if (!airborne) {
+        velocity *= FRICTION;
+    }
+    
+    // Controls
     if (cursors.left.isDown) {
-        skater.setVelocityX(-speed);
-        skater.setTint(0xff0000); // Red when moving left
+        velocity -= 10;
     } else if (cursors.right.isDown) {
-        skater.setVelocityX(speed);
-        skater.setTint(0x00ff00); // Green when moving right
-    } else {
-        skater.setVelocityX(0);
-        skater.setTint(0x0000ff); // Blue when idle
+        velocity += 10;
     }
     
-    // Jump
-    if (spaceKey.isDown && skater.body.touching.down) {
-        skater.setVelocityY(-500);
+    // A key - Kick/Push
+    if (aKey.isDown && !airborne) {
+        kickPower = Math.min(kickPower + 5, 100);
+    } else if (kickPower > 0) {
+        velocity += (kickPower * KICK_FORCE) / 100;
+        kickPower = 0;
+    }
+    
+    // S key - Jump
+    if (sKey.isDown && !airborne) {
+        skater.setVelocityY(-JUMP_FORCE);
         
-        // Extra height in halfpipe
-        if (isInHalfpipe) {
-            skater.setVelocityY(-700);
-            score += 50;
-            combo = Math.min(5, combo + 0.5);
-            comboTimer = 60;
+        // Add horizontal boost based on current velocity
+        if (Math.abs(velocity) > 200) {
+            skater.setVelocityY(-JUMP_FORCE * 1.5);
         }
     }
     
-    // Halfpipe boost
-    if (isInHalfpipe && skater.body.touching.down) {
-        const relX = (skater.x - 220) / HALFPIPE_WIDTH;
-        if (relX > 0 && relX < 1) {
-            // Add speed boost on slopes
-            const boost = Math.abs(Math.cos(relX * Math.PI)) * 5;
-            speed = Math.min(400, 200 + boost * 20);
-        }
-    } else {
-        speed = 200;
-    }
+    // Limit velocity
+    velocity = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, velocity));
     
-    // Air rotation visual
-    if (!skater.body.touching.down) {
-        skater.angle += 5;
+    // Apply velocity
+    skater.setVelocityX(velocity);
+    
+    // Visual feedback
+    if (airborne) {
+        // Rotate in air
+        skater.angle += velocity / 50;
         skater.setTint(0xffff00); // Yellow in air
     } else {
         skater.angle = 0;
-    }
-    
-    // Update combo
-    if (comboTimer > 0) {
-        comboTimer--;
-        if (comboTimer === 0) {
-            combo = 1;
+        if (kickPower > 0) {
+            skater.setTint(0x00ff00); // Green when charging kick
+        } else if (Math.abs(velocity) > 400) {
+            skater.setTint(0xff00ff); // Purple at high speed
+        } else {
+            skater.setTint(0xff0000); // Red normally
         }
     }
     
-    // Scroll obstacles
-    obstacles.forEach(obstacle => {
-        obstacle.x -= 3;
-        
-        // Simple collision check
-        if (Phaser.Geom.Intersects.RectangleToRectangle(skater.getBounds(), obstacle.getBounds())) {
-            score = Math.max(0, score - 10);
-            combo = 1;
-            obstacle.x = -100;
-            skater.setTint(0xff00ff); // Purple on hit
-        }
-        
-        // Respawn
-        if (obstacle.x < -50) {
-            obstacle.x = 700 + Math.random() * 200;
-        }
-    });
-    
-    // Score for distance
-    score += 0.1;
-    
-    // Update display
-    scoreText.setText(`Score: ${Math.floor(score)}` + (combo > 1 ? ` Combo x${combo.toFixed(1)}!` : ''));
-}
-
-function updateTimeOfDay() {
-    timeOfDay = (timeOfDay + 2) % 24;
-    updateSkyGradient.call(this);
-    
-    const timeStr = timeOfDay < 6 || timeOfDay > 20 ? 'Night' :
-                   timeOfDay < 8 || timeOfDay > 18 ? 'Dawn/Dusk' : 'Day';
-    
-    this.timeText.setText(`${scene === 'beach' ? 'Beach' : 'Hollywood'} - ${timeStr}`);
-}
-
-function switchScene() {
-    scene = scene === 'beach' ? 'parking' : 'beach';
-    
-    // Recreate background
-    createBackground.call(this);
-    
-    // Generate new obstacles
-    generateObstacles.call(this);
+    // Update debug info
+    debugText.setText([
+        `Speed: ${Math.abs(velocity).toFixed(0)}`,
+        `Airborne: ${airborne}`,
+        `Kick Power: ${kickPower}%`,
+        `Position: ${skater.x.toFixed(0)}, ${skater.y.toFixed(0)}`
+    ]);
 }
 
 // Create the game
